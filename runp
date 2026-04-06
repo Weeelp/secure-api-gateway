@@ -1,0 +1,2 @@
+fuser -k 8080/tcp
+go run cmd/main.go
