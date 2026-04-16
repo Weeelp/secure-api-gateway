@@ -2,22 +2,29 @@ package main
 
 import (
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
 	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
 )
 
+var proxy *httputil.ReverseProxy
+
 func homeHandler(resp http.ResponseWriter, req *http.Request) {
 	logger.Log.Info("/: запрос на гланвую", "path", req.URL.Path)
+	proxy.ServeHTTP(resp, req)
 }
 
 func healthHandler(resp http.ResponseWriter, req *http.Request) {
 	logger.Log.Info("OK")
 }
 
-func formHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
+func formHandler(resp http.ResponseWriter, req *http.Request) {
+	proxy.ServeHTTP(resp, req)
+
+	switch req.Method {
 	case http.MethodGet:
 		logger.Log.Info(`
 				<form method="POST">
@@ -26,13 +33,13 @@ func formHandler(w http.ResponseWriter, r *http.Request) {
 				</form>
 			`)
 	case http.MethodPost:
-		err := r.ParseForm()
+		err := req.ParseForm()
 		if err != nil {
 			logger.Log.Warn("Error parsing form", "error", err)
 			return
 		}
 
-		name := r.FormValue("name")
+		name := req.FormValue("name")
 		logger.Log.Info("form", "name", name)
 	}
 }
@@ -40,8 +47,14 @@ func formHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	logger.Init()
 	defer logger.Close()
-
 	cfg := config.New()
+
+	backServer, err := url.Parse("http://localhost:9090")
+	if err != nil {
+		logger.Log.Fatal("Error server connection", "err", err)
+	}
+
+	proxy = httputil.NewSingleHostReverseProxy(backServer)
 
 	http.HandleFunc("/", homeHandler)
 
@@ -58,7 +71,7 @@ func main() {
 
 	logger.Log.Info("Server is running http://localhost", "port", cfg.Port)
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
 		logger.Log.Fatal("500: Error fatal", "fatal err", err)
 	}

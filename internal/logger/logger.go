@@ -20,7 +20,7 @@ func Init() {
 	tempLog.SetFormatter(&logrus.JSONFormatter{})
 	tempLog.SetLevel(logrus.DebugLevel)
 
-	file, err := os.OpenFile("api-gateway.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile("api_gateway.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 
 	if err != nil {
 		fmt.Printf("Log file error: %v", err)
