@@ -8,40 +8,30 @@ import (
 
 	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
+	"secure-api-gateway/internal/middleware"
 )
 
 var proxy *httputil.ReverseProxy
 
 func homeHandler(resp http.ResponseWriter, req *http.Request) {
-	logger.Log.Info("/: запрос на гланвую", "path", req.URL.Path)
+	log := logger.FromContext(req.Context())
+	log.Info("/: запрос на гланвую", "path", req.URL.Path)
 	proxy.ServeHTTP(resp, req)
 }
 
 func healthHandler(resp http.ResponseWriter, req *http.Request) {
-	logger.Log.Info("OK")
+	log := logger.FromContext(req.Context())
+	log.Info("OK")
 }
 
 func formHandler(resp http.ResponseWriter, req *http.Request) {
+	log := logger.FromContext(req.Context())
+	log.Info("Form request")
 	proxy.ServeHTTP(resp, req)
+}
 
-	switch req.Method {
-	case http.MethodGet:
-		logger.Log.Info(`
-				<form method="POST">
-					<input type="text" name="name" placeholder="Enter your name">
-					<button type="submit">Submit</button>
-				</form>
-			`)
-	case http.MethodPost:
-		err := req.ParseForm()
-		if err != nil {
-			logger.Log.Warn("Error parsing form", "error", err)
-			return
-		}
-
-		name := req.FormValue("name")
-		logger.Log.Info("form", "name", name)
-	}
+func favicoHandler(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func main() {
@@ -56,15 +46,16 @@ func main() {
 
 	proxy = httputil.NewSingleHostReverseProxy(backServer)
 
-	http.HandleFunc("/", homeHandler)
+	mux := http.NewServeMux()
 
-	http.HandleFunc("/health", healthHandler)
-
-	http.HandleFunc("/form", formHandler)
+	mux.HandleFunc("/", homeHandler)
+	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/form", formHandler)
+	mux.HandleFunc("/favicon.ico", favicoHandler)
 
 	server := &http.Server{
 		Addr:         cfg.Port,
-		Handler:      nil,
+		Handler:      middleware.StructuredLogger(mux),
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}

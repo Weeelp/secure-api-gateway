@@ -8,7 +8,7 @@ import (
 )
 
 type logrusWrapper struct {
-	l *logrus.Logger
+	entry logrus.FieldLogger
 }
 
 var Log Logger
@@ -37,12 +37,11 @@ func Init() {
 		})
 	}
 
+	Log = &logrusWrapper{entry: tempLog}
 	tempLog.Info("Success logger init")
-
-	Log = &logrusWrapper{l: tempLog}
 }
 
-func (w *logrusWrapper) write(level logrus.Level, msg string, args ...any) {
+func (w *logrusWrapper) argsToFields(args ...any) logrus.Fields {
 	fields := make(logrus.Fields)
 	for i := 0; i < len(args); i += 2 {
 		if i+1 < len(args) {
@@ -51,7 +50,17 @@ func (w *logrusWrapper) write(level logrus.Level, msg string, args ...any) {
 			}
 		}
 	}
-	w.l.WithFields(fields).Log(level, msg)
+	return fields
+}
+
+func (w *logrusWrapper) With(args ...any) Logger {
+	return &logrusWrapper{
+		entry: w.entry.WithFields(w.argsToFields(args...)),
+	}
+}
+
+func (w *logrusWrapper) write(level logrus.Level, msg string, args ...any) {
+	w.entry.WithFields(w.argsToFields(args...)).Log(level, msg)
 }
 
 func (w *logrusWrapper) Info(msg string, args ...any)  { w.write(logrus.InfoLevel, msg, args...) }

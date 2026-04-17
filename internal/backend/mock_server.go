@@ -9,7 +9,6 @@ import (
 
 func homeHandler(resp http.ResponseWriter, req *http.Request) {
 	log.Printf("/: запрос на главную, path: %s", req.URL.Path)
-	log.Println(req.RemoteAddr)
 	resp.Write([]byte("get\n"))
 }
 
