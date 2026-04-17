@@ -1,44 +1,60 @@
 package main
 
 import (
-	"log"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"time"
 
 	"secure-api-gateway/internal/config"
+	"secure-api-gateway/internal/logger"
 )
 
+var proxy *httputil.ReverseProxy
+
 func homeHandler(resp http.ResponseWriter, req *http.Request) {
-	log.Printf("/: %s", req.URL.Path)
+	logger.Log.Info("/: запрос на гланвую", "path", req.URL.Path)
+	proxy.ServeHTTP(resp, req)
 }
 
 func healthHandler(resp http.ResponseWriter, req *http.Request) {
-	log.Printf("OK")
+	logger.Log.Info("OK")
 }
 
-func formHandler(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
+func formHandler(resp http.ResponseWriter, req *http.Request) {
+	proxy.ServeHTTP(resp, req)
+
+	switch req.Method {
 	case http.MethodGet:
-		log.Printf(`
+		logger.Log.Info(`
 				<form method="POST">
 					<input type="text" name="name" placeholder="Enter your name">
 					<button type="submit">Submit</button>
 				</form>
 			`)
 	case http.MethodPost:
-		err := r.ParseForm()
+		err := req.ParseForm()
 		if err != nil {
-			log.Printf("Error parsing form: %v", err)
+			logger.Log.Warn("Error parsing form", "error", err)
 			return
 		}
 
-		name := r.FormValue("name")
-		log.Printf("form: %s", name)
+		name := req.FormValue("name")
+		logger.Log.Info("form", "name", name)
 	}
 }
 
 func main() {
+	logger.Init()
+	defer logger.Close()
 	cfg := config.New()
+
+	backServer, err := url.Parse("http://localhost:9090")
+	if err != nil {
+		logger.Log.Fatal("Error server connection", "err", err)
+	}
+
+	proxy = httputil.NewSingleHostReverseProxy(backServer)
 
 	http.HandleFunc("/", homeHandler)
 
@@ -53,10 +69,10 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Printf("Сервер запущен на http://localhost%s", cfg.Port)
+	logger.Log.Info("Server is running http://localhost", "port", cfg.Port)
 
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 	if err != nil {
-		log.Fatalf("500: Error fatal %v", err)
+		logger.Log.Fatal("500: Error fatal", "fatal err", err)
 	}
 }
