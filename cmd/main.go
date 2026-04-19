@@ -79,7 +79,7 @@ func main() {
 	if err != nil {
 		logger.Log.Fatal("500: Error fatal", "fatal err", err)
 	}
-	// 1. Инициализация Redis
+
 	cache.InitRedis()
 	defer cache.CloseRedis()
 

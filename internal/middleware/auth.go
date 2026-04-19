@@ -79,8 +79,7 @@ func JWTAuthMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 				ctx := context.WithValue(r.Context(), UserIDKey, userID)
 				r = r.WithContext(ctx)
 
-				// 5. Защита от повторного использования (basic replay protection)
-				// Для этого можно использовать nonce или jti (JWT ID)
+				//Защита от повторного использования (basic replay protection)
 				if jti, ok := claims["jti"].(string); ok {
 
 					isUsed, err := cache.RedisClient.Exists(context.Background(), "used_tokens:"+jti).Result()

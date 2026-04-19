@@ -1,4 +1,4 @@
-// internal/cache/redis.go
+// запоминает какие токены уже были использованы
 package cache
 
 import (
@@ -21,9 +21,9 @@ func InitRedis() {
 	ctx := context.Background()
 
 	client := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379", // Если не настроен через ENV
-		Password: "",               // Пароль, если есть
-		DB:       0,                // База данных
+		Addr:     "redis:6379", // Если не настроен через ENV
+		Password: "",           // Пароль, если есть
+		DB:       0,            // База данных
 	})
 
 	// Проверяем подключение
