@@ -62,7 +62,7 @@ func JWTAuthMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 
 				// Проверка issuer (если нужно)
 				if iss, ok := claims["iss"].(string); ok {
-					if iss != "your-app-name" { // Замени на свой issuer
+					if iss != "cyber-bro" { // Замени на свой issuer
 						http.Error(w, "Invalid issuer", http.StatusUnauthorized)
 						return
 					}

@@ -3,17 +3,22 @@ package main
 import (
 	"fmt"
 	"time"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
 
-func ganerateToken() {
+func main() {
+	generateToken()
+}
+
+func generateToken() {
 	secretKey := []byte("твой_секретный_ключ") // Тот же ключ, что в main.go
-	
+
 	claims := jwt.MapClaims{
 		"user_id": float64(123),
 		"exp":     time.Now().Add(time.Hour * 24).Unix(), // Токен на 24 часа
-		"iss":     "your-app-name",                       // Тот же issuer, что в middleware
+		"iss":     "cyber-bro",                           // Тот же issuer, что в middleware
 		"jti":     uuid.New().String(),                   // Уникальный ID
 	}
 
