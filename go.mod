@@ -1,8 +1,5 @@
-// управление зависимостями
-// имя модуля
 module secure-api-gateway
 
-// версия го
 go 1.26.1
 
 require (
