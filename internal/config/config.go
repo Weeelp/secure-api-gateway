@@ -8,7 +8,8 @@ import (
 )
 
 type Config struct {
-	Port string
+	Port       string
+	BackendURL string
 }
 
 func New() *Config {
@@ -22,7 +23,13 @@ func New() *Config {
 		port = "8080"
 	}
 
+	BackendURL := os.Getenv("BACKEND_URL")
+	if BackendURL == "" {
+		BackendURL = "http://localhost:9090"
+	}
+
 	return &Config{
-		Port: ":" + port,
+		Port:       ":" + port,
+		BackendURL: BackendURL,
 	}
 }
