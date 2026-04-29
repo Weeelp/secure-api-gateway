@@ -10,9 +10,11 @@ import (
 )
 
 type RedisConfig struct {
-	Addr     string
-	Password string
-	DB       int
+	Addr        string
+	Password    string
+	JwtDB       int
+	RateLimitDB int
+	BlacklistDB int
 }
 
 type Config struct {
@@ -26,17 +28,20 @@ type Config struct {
 func New() *Config {
 	_ = godotenv.Load(".env")
 
-	getEnv := func(key, defaultValue string) string {
+	getEnvStr := func(key, defaultValue string) string {
 		if value := os.Getenv(key); value != "" {
 			return value
 		}
 		return defaultValue
 	}
 
-	dbStr := getEnv("REDIS_DB", "0")
-	dbInt, err := strconv.Atoi(dbStr)
-	if err != nil {
-		dbInt = 0
+	getEnvInt := func(key, defaultValue string) int {
+		valueStr := getEnvStr(key, defaultValue)
+		valueInt, err := strconv.Atoi(valueStr)
+		if err != nil {
+			valueInt = 0
+		}
+		return valueInt
 	}
 
 	jwtS := os.Getenv("JWT_SECRET")
@@ -45,14 +50,16 @@ func New() *Config {
 	}
 
 	return &Config{
-		Port:       ":" + getEnv("PORT", "8080"),
-		BackendURL: getEnv("BACKEND_URL", "http://localhost:9090"),
-		RedisURL:   getEnv("REDIS_URL", "redis://localhost:6379"),
+		Port:       ":" + getEnvStr("PORT", "8080"),
+		BackendURL: getEnvStr("BACKEND_URL", "http://localhost:9090"),
+		RedisURL:   getEnvStr("REDIS_URL", "redis://localhost:6379"),
 		JWTS:       jwtS,
 		Redis: RedisConfig{
-			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
-			Password: getEnv("REDIS_PASS", ""),
-			DB:       dbInt,
+			Addr:        getEnvStr("REDIS_ADDR", "localhost:6379"),
+			Password:    getEnvStr("REDIS_PASS", ""),
+			JwtDB:       getEnvInt("JWT_DB", "0"),
+			RateLimitDB: getEnvInt("RATE_LIMIT_DB", "1"),
+			BlacklistDB: getEnvInt("BLACKLIST_DB", "2"),
 		},
 	}
 }

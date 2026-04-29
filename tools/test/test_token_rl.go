@@ -31,3 +31,5 @@ func generateToken() {
 
 	fmt.Println(tokenString)
 }
+
+//for i in {1..15}; do curl -s -o /dev/null -w "%{http_code}\n" -H "Authorization: Bearer TOKEN" http://localhost:8080/; done

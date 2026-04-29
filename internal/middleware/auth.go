@@ -82,27 +82,29 @@ func JWTAuthMiddleware(secretKey []byte, rds *cache.Redis) func(http.Handler) ht
 				//Защита от повторного использования (basic replay protection)
 				if jti, ok := claims["jti"].(string); ok {
 
-					isUsed, err := rds.GetEngine().Exists(context.Background(), "used_tokens:"+jti).Result()
+					// isUsed, err := rds.GetJwtEngine().Exists(context.Background(), "used_tokens:"+jti).Result()
 
-					if err != nil {
-						http.Error(w, "Internal error", http.StatusInternalServerError)
-						return
-					}
+					// if err != nil {
+					// 	http.Error(w, "Internal error", http.StatusInternalServerError)
+					// 	return
+					// }
 
-					if isUsed == 1 {
-						http.Error(w, "Token already used", http.StatusUnauthorized)
-						return
-					}
+					// if isUsed == 1 {
+					// 	http.Error(w, "Token already used", http.StatusUnauthorized)
+					// 	return
+					// }
 
 					// Помечаем токен как использованный
 					expTime := int64(claims["exp"].(float64)) // Приводим exp к int64
 					nowTime := time.Now().Unix()              // Уже int64
 					ttl := time.Duration(expTime-nowTime) * time.Second
-					_, err = rds.GetEngine().Set(context.Background(), "used_tokens:"+jti, true, ttl).Result()
+					_, err = rds.GetJwtEngine().Set(context.Background(), "used_tokens:"+jti, true, ttl).Result()
 					if err != nil {
 						http.Error(w, "Internal error", http.StatusInternalServerError)
 						return
 					}
+
+					next.ServeHTTP(w, r)
 				} else {
 					http.Error(w, "Invalid jti", http.StatusUnauthorized)
 					return
