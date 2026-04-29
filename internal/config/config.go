@@ -1,35 +1,58 @@
 package config
 
 import (
-	"log"
 	"os"
+	"strconv"
+
+	"secure-api-gateway/internal/logger"
 
 	"github.com/joho/godotenv"
 )
 
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
+}
+
 type Config struct {
 	Port       string
 	BackendURL string
+	RedisURL   string
+	JWTS       string
+	Redis      RedisConfig
 }
 
 func New() *Config {
-	err := godotenv.Load(".env")
+	_ = godotenv.Load(".env")
+
+	getEnv := func(key, defaultValue string) string {
+		if value := os.Getenv(key); value != "" {
+			return value
+		}
+		return defaultValue
+	}
+
+	dbStr := getEnv("REDIS_DB", "0")
+	dbInt, err := strconv.Atoi(dbStr)
 	if err != nil {
-		log.Println("WARN: .env файл не найден, используем системные переменные")
+		dbInt = 0
 	}
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
-	}
-
-	BackendURL := os.Getenv("BACKEND_URL")
-	if BackendURL == "" {
-		BackendURL = "http://localhost:9090"
+	jwtS := os.Getenv("JWT_SECRET")
+	if jwtS == "" {
+		logger.Log.Fatal("Fatal JWT_SECRET undefined!")
 	}
 
 	return &Config{
-		Port:       ":" + port,
-		BackendURL: BackendURL,
+		Port:       ":" + getEnv("PORT", "8080"),
+		BackendURL: getEnv("BACKEND_URL", "http://localhost:9090"),
+		RedisURL:   getEnv("REDIS_URL", "redis://localhost:6379"),
+		JWTS:       jwtS,
+		Redis: RedisConfig{
+			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+			Password: getEnv("REDIS_PASS", ""),
+			DB:       dbInt,
+		},
 	}
 }

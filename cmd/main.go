@@ -5,17 +5,22 @@ import (
 	"time"
 
 	"secure-api-gateway/internal/app"
+	"secure-api-gateway/internal/cache"
 	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
 )
 
 func main() {
-	logger.Init()
-	defer logger.Close()
 	cfg := config.New()
 
+	logger.Init()
+	defer logger.Close()
+
+	rds := cache.NewRedis(cfg)
+	defer rds.CloseRedis()
+
 	target := cfg.BackendURL
-	router := app.NewRouter(target)
+	router := app.NewRouter(target, cfg, rds)
 	server := &http.Server{
 		Addr:         cfg.Port,
 		Handler:      router,

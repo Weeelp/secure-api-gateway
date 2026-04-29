@@ -3,13 +3,17 @@ package app
 import (
 	"net/http"
 
+	"secure-api-gateway/internal/cache"
+	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
 	"secure-api-gateway/internal/middleware"
 	"secure-api-gateway/internal/proxy"
 )
 
-func NewRouter(targetURL string) http.Handler {
+func NewRouter(targetURL string, cfg *config.Config, rds *cache.Redis) http.Handler {
 	mux := http.NewServeMux()
+
+	jwtMW := middleware.JWTAuthMiddleware([]byte(cfg.JWTS), rds)
 
 	gwProxy, err := proxy.NewProxy(targetURL)
 	if err != nil {
@@ -51,7 +55,7 @@ func NewRouter(targetURL string) http.Handler {
 
 	favicoHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
-	mux.Handle("/", logMW(homeHandler))
+	mux.Handle("/", logMW(jwtMW(homeHandler)))
 	mux.Handle("/health", logMW(healthHandler))
 	mux.Handle("/form", logMW(formHandler))
 	mux.Handle("/favicon.ico", favicoHandler)
