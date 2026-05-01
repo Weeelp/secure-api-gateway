@@ -32,6 +32,6 @@ func main() {
 	logger.Log.Info("Gateway is running", "addr", cfg.Port, "target", targets)
 
 	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		logger.Log.Fatal("Server stopped with error", "err", err)
+		logger.Log.Fatal("Proxy stopped with error", "err", err)
 	}
 }
