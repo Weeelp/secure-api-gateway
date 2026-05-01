@@ -23,7 +23,7 @@ func IPBlacklistMiddleware(rds *cache.Redis) func(http.Handler) http.Handler {
 			exists, err := rdsClinet.Exists(ctx, key).Result()
 
 			if exists > 0 {
-				http.Error(w, "Access denied: Banned IP", http.StatusForbidden) // 403
+				http.Error(w, "Access denied: Banned IP", http.StatusForbidden)
 				return
 			}
 
