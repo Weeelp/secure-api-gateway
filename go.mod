@@ -1,6 +1,6 @@
 module secure-api-gateway
 
-go 1.26.1
+go 1.23
 
 require (
 	github.com/go-redis/redis/v8 v8.11.5

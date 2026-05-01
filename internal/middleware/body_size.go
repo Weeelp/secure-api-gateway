@@ -20,7 +20,7 @@ func MaxBodySizeMiddleware(maxSize int64) func(http.Handler) http.Handler {
 
 				if size > maxSize {
 					w.Header().Set("Connection", "close")
-					http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge) // 413
+					http.Error(w, "Request body too large", http.StatusRequestEntityTooLarge)
 					return
 				}
 			}

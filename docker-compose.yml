@@ -1,32 +1,46 @@
 version: '3.8'
 
 services:
-  app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  redis:
+    image: redis:alpine
+    container_name: gateway_redis
+    ports:
+      - "6380:6379"
+
+  backend1:
+    image: golang:1.23-alpine  # Используем образ, где Go УЖЕ есть
+    container_name: backend_9090
+    volumes:
+      - .:/app                 # Прокидываем твой код в контейнер
+    working_dir: /app
+    command: go run internal/backend/mock_server.go 9090
+    ports:
+      - "9090:9090"
+
+  backend2:
+    image: golang:1.23-alpine
+    container_name: backend_9091
+    volumes:
+      - .:/app
+    working_dir: /app
+    command: go run internal/backend/mock_server.go 9091
+    ports:
+      - "9091:9091"
+
+  gateway:
+    build: .
+    container_name: api_gateway
     ports:
       - "8080:8080"
     environment:
-      - LOG_LEVEL=info
-    restart: unless-stopped
-    networks:
-      - my-network
+      - PORT=8080
+      - REDIS_ADDR=redis:6379
+      - BACKEND_URL=http://backend1:9090,http://backend2:9091
+      - JWT_SECRET=f3ff0b04e44eb99cefab7c2862440c8cd6581a4b07e798f420e0fa212c4c7964
+      - JWT_DB=0
+      - RATE_LIMIT_DB=1
+      - BLACKLIST_DB=2
     depends_on:
       - redis
-  redis:
-    image: redis:latest
-    container_name: redis-server
-    ports:
-      - "6379:6379"
-    volumes:
-      - redis-data:/data
-    networks:
-      - my-network
-
-networks:
-  my-network:
-    driver: bridge
-
-volumes:
-  redis-data:
+      - backend1
+      - backend2
