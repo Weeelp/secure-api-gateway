@@ -1,7 +1,10 @@
 package app
 
 import (
+	"fmt"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 
 	"secure-api-gateway/internal/cache"
@@ -10,6 +13,49 @@ import (
 	"secure-api-gateway/internal/middleware"
 	"secure-api-gateway/internal/proxy"
 )
+
+var challengeAnswer string
+
+func generateChallenge(resp http.ResponseWriter, req *http.Request) {
+	num1 := rand.Intn(10) + 1
+	num2 := rand.Intn(10) + 1
+	challengeAnswer = strconv.Itoa(num1 + num2)
+
+	resp.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(resp, `
+		<!DOCTYPE html>
+		<html>
+		<head><title>Security Challenge</title></head>
+		<body>
+			<h2>Безопасность: Решите задачу</h2>
+			<p>Сколько будет: <strong>%d + %d</strong>?</p>
+			<form method="POST">
+				<input type="number" name="answer" required placeholder="Ответ">
+				<button type="submit">Проверить</button>
+			</form>
+		</body>
+		</html>
+	`, num1, num2)
+}
+
+func verifyChallenge(resp http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		http.Redirect(resp, req, "/challenge", http.StatusSeeOther)
+		return
+	}
+	req.ParseForm()
+	userAnswer := req.FormValue("answer")
+
+	if userAnswer == challengeAnswer {
+		resp.WriteHeader(http.StatusOK)
+		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(resp, `<h1>✅ Верно! Вы прошли проверку безопасности.</h1>`)
+	} else {
+		resp.WriteHeader(http.StatusForbidden)
+		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(resp, `<h1>❌ Неверно. Попробуйте снова.</h1>`)
+	}
+}
 
 func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.Handler {
 	mux := http.NewServeMux()
@@ -62,6 +108,8 @@ func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.H
 	mux.Handle("/health", logMW(blMW(healthHandler)))
 	mux.Handle("/form", logMW(blMW(bsMW(formHandler))))
 	mux.Handle("/favicon.ico", favicoHandler)
+	mux.HandleFunc("/challenge", generateChallenge)
+	mux.HandleFunc("/challenge/verify", verifyChallenge)
 
 	return mux
 }

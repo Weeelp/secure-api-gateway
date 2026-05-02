@@ -119,27 +119,9 @@ func main() {
 
 	router := app.NewRouter([]string{cfg.BackendURL}, cfg, rds)
 
-	mux := http.NewServeMux()
-
-	// Сначала регистрируем свои роуты
-	mux.HandleFunc("/challenge", generateChallenge)
-	mux.HandleFunc("/challenge/verify", verifyChallenge)
-
-	// Затем добавляем все остальные роуты из router.go
-	// Мы используем ServeHTTP, чтобы перенаправить все остальные запросы на наш основной роутер
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Если это /challenge или /challenge/verify — обрабатываем здесь
-		if r.URL.Path == "/challenge" || r.URL.Path == "/challenge/verify" {
-			mux.ServeHTTP(w, r)
-			return
-		}
-		// Иначе передаем дальше в основной роутер
-		router.ServeHTTP(w, r)
-	})
-
 	server := &http.Server{
 		Addr:         cfg.Port,
-		Handler:      handler,
+		Handler:      router,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
