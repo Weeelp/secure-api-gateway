@@ -66,6 +66,7 @@ func JWTAuthMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 						http.Error(w, "Invalid issuer", http.StatusUnauthorized)
 						return
 					}
+
 				}
 
 				//Извлечение user_id
@@ -107,6 +108,11 @@ func JWTAuthMiddleware(secretKey []byte) func(http.Handler) http.Handler {
 					http.Error(w, "Invalid jti", http.StatusUnauthorized)
 					return
 				}
+
+				next.ServeHTTP(w, r)
+			} else {
+				// Если claims не удалось распарсить или токен невалиден
+				http.Error(w, "Invalid token claims", http.StatusUnauthorized)
 			}
 		})
 	}
