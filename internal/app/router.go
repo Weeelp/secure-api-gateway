@@ -2,21 +2,28 @@ package app
 
 import (
 	"net/http"
+	"time"
 
+	"secure-api-gateway/internal/cache"
+	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
 	"secure-api-gateway/internal/middleware"
 	"secure-api-gateway/internal/proxy"
 )
 
-func NewRouter(targetURL string) http.Handler {
+func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.Handler {
 	mux := http.NewServeMux()
 
-	gwProxy, err := proxy.NewProxy(targetURL)
+	logMW := middleware.LoggerMiddleware
+	blMW := middleware.IPBlacklistMiddleware(rds)
+	bsMW := middleware.MaxBodySizeMiddleware(1024 * 1024)
+	rlMW := middleware.RateLimitMiddleware(rds, 10, time.Minute)
+	jwtMW := middleware.JWTAuthMiddleware([]byte(cfg.JWTS), rds)
+
+	gwProxy, err := proxy.NewProxy(targetURLs)
 	if err != nil {
 		logger.Log.Error("Failed to initialize proxy", "err", err)
 	}
-
-	logMW := middleware.StructuredLogger
 
 	homeHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log := logger.FromContext(r.Context())
@@ -26,9 +33,8 @@ func NewRouter(targetURL string) http.Handler {
 	})
 
 	healthHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		alive := gwProxy.IsAlive()
+		alive := gwProxy.IsAnyAlive()
 		log := logger.FromContext(r.Context())
-
 		log.Debug("Health check performed", "is_alive", alive)
 
 		w.Header().Set("Content-Type", "text/plain")
@@ -51,9 +57,10 @@ func NewRouter(targetURL string) http.Handler {
 
 	favicoHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
 
-	mux.Handle("/", logMW(homeHandler))
-	mux.Handle("/health", logMW(healthHandler))
-	mux.Handle("/form", logMW(formHandler))
+	mux.Handle("/", logMW(blMW(jwtMW(rlMW(homeHandler)))))
+	mux.Handle("/app", logMW(blMW(homeHandler)))
+	mux.Handle("/health", logMW(blMW(healthHandler)))
+	mux.Handle("/form", logMW(blMW(bsMW(formHandler))))
 	mux.Handle("/favicon.ico", favicoHandler)
 
 	return mux

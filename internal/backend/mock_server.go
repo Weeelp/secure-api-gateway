@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 )
 
@@ -34,17 +35,21 @@ func formHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	port := "9090"
+	if len(os.Args) > 1 {
+		port = os.Args[1]
+	}
 	http.HandleFunc("/", homeHandler)
 	http.HandleFunc("/form", formHandler)
 
 	server := &http.Server{
-		Addr:         ":9090",
+		Addr:         ":" + port,
 		Handler:      nil,
 		ReadTimeout:  5 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
 
-	log.Printf("Server is running on http://localhost:9090")
+	log.Printf("Server is running on http://localhost: %s", port)
 
 	err := server.ListenAndServe()
 	if err != nil {

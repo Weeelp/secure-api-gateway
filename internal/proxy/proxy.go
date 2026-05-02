@@ -6,81 +6,122 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"secure-api-gateway/internal/logger"
 )
 
 type Proxy struct {
+	backends []*Backend
+	current  uint32
+}
+
+type Backend struct {
 	target  *url.URL
 	engine  *httputil.ReverseProxy
 	isAlive bool
 	mu      sync.RWMutex
 }
 
-func NewProxy(targetURL string) (*Proxy, error) {
-	target, err := url.Parse(targetURL)
-	if err != nil {
-		return nil, err
+func (p *Proxy) IsAnyAlive() bool {
+	for _, back := range p.backends {
+		if back.IsAlive() {
+			return true
+		}
 	}
-
-	p := &Proxy{
-		target:  target,
-		engine:  httputil.NewSingleHostReverseProxy(target),
-		isAlive: true,
-	}
-
-	p.engine.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		p.setAlive(false)
-
-		log := logger.FromContext(r.Context())
-		log.Error("Backend is unreachable", "err", err)
-
-		w.WriteHeader(http.StatusBadGateway)
-		w.Write([]byte("Error: Backend is temporarily unavailable. Retrying..."))
-	}
-
-	go p.healthCheck()
-
-	return p, nil
+	return false
 }
 
-func (p *Proxy) setAlive(status bool) {
-	p.mu.Lock()
-	p.isAlive = status
-	p.mu.Unlock()
+func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	n := atomic.AddUint32(&p.current, 1)
+	lenBack := uint32(len(p.backends))
+
+	for i := uint32(0); i < lenBack; i++ {
+		idx := (n + i) % lenBack
+		peer := p.backends[idx]
+
+		if peer.IsAlive() {
+			peer.ServeHTTP(w, r)
+			return
+		}
+	}
+
+	http.Error(w, "Service Unvailable: Np healthy backend", http.StatusServiceUnavailable)
+
 }
 
-func (p *Proxy) IsAlive() bool {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.isAlive
+func NewProxy(targetURLs []string) (*Proxy, error) {
+	var backends []*Backend
+	for _, targetURL := range targetURLs {
+		target, err := url.Parse(targetURL)
+		if err != nil {
+			return nil, err
+		}
+
+		b := &Backend{
+			target:  target,
+			engine:  httputil.NewSingleHostReverseProxy(target),
+			isAlive: true,
+		}
+
+		b.engine.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
+			b.setAlive(false)
+
+			log := logger.FromContext(r.Context())
+			log.Error("Backend is unreachable", "err", err)
+
+			w.WriteHeader(http.StatusBadGateway)
+			w.Write([]byte("Error: Backend is temporarily unavailable."))
+		}
+
+		go b.healthCheck()
+
+		backends = append(backends, b)
+	}
+
+	return &Proxy{
+		backends: backends,
+		current:  0,
+	}, nil
 }
 
-func (p *Proxy) healthCheck() {
+func (b *Backend) IsAlive() bool {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	return b.isAlive
+}
+
+func (b *Backend) setAlive(status bool) {
+	b.mu.Lock()
+	b.isAlive = status
+	b.mu.Unlock()
+}
+
+func (b *Backend) healthCheck() {
 	for {
 		time.Sleep(5 * time.Second)
 
-		conn, err := net.DialTimeout("tcp", p.target.Host, 2*time.Second)
+		conn, err := net.DialTimeout("tcp", b.target.Host, 2*time.Second)
 
 		if err != nil {
-			if p.IsAlive() {
-				logger.Log.Warn("Backend status changed: ALIVE -> DEAD", "target", p.target.Host)
-				p.setAlive(false)
+			if b.IsAlive() {
+				logger.Log.Warn("Backend status changed: ALIVE -> DEAD", "target", b.target.Host)
+				b.setAlive(false)
 			}
 			continue
 		}
 
 		conn.Close()
 
-		if !p.IsAlive() {
-			logger.Log.Debug("Backend status changed: DEAD -> ALIVE", "target", p.target.Host)
-			p.setAlive(true)
+		if !b.IsAlive() {
+			logger.Log.Debug("Backend status changed: DEAD -> ALIVE", "target", b.target.Host)
+			b.setAlive(true)
 		}
 	}
 }
 
-func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	r.Host = p.target.Host
-	p.engine.ServeHTTP(w, r)
+func (b *Backend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Host = b.target.Host
+	b.engine.ServeHTTP(w, r)
 }
