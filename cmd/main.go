@@ -130,16 +130,9 @@ func main() {
 
 	handler := http.Handler(mux)
 
-	// Шаг A: Проверка на ботов
 	handler = middleware.BotDetectionMiddleware(mux)
-
-	// Шаг B: Добавление безопасных заголовков
 	handler = middleware.SecureHeadersMiddleware(handler)
-
-	// Шаг C: JWT Аутентификация
 	handler = middleware.JWTAuthMiddleware(secretKey)(handler)
-
-	// Шаг D: Логирование запросов
 	handler = middleware.StructuredLogger(handler)
 
 	server := &http.Server{
