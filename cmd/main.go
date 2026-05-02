@@ -7,15 +7,14 @@ import (
 	"math/rand"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"os"
 	"strconv"
 	"time"
 
+	"secure-api-gateway/internal/app"
 	"secure-api-gateway/internal/cache"
 	"secure-api-gateway/internal/config"
 	"secure-api-gateway/internal/logger"
-	"secure-api-gateway/internal/middleware"
 )
 
 var proxy *httputil.ReverseProxy
@@ -60,8 +59,6 @@ func formHandler(resp http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// --- JS Challenge (Твои функции) ---
-
 func generateChallenge(resp http.ResponseWriter, req *http.Request) {
 	num1 := rand.Intn(10) + 1
 	num2 := rand.Intn(10) + 1
@@ -95,68 +92,51 @@ func verifyChallenge(resp http.ResponseWriter, req *http.Request) {
 	if userAnswer == challengeAnswer {
 		resp.WriteHeader(http.StatusOK)
 		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(resp, `<h1>✅ Верно! Вы прошли проверку безопасности.</h1>`)
+		fmt.Fprint(resp, `<h1>Вы прошли проверку безопасности.</h1>`)
 	} else {
 		resp.WriteHeader(http.StatusForbidden)
 		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(resp, `<h1>❌ Неверно. Попробуйте снова.</h1>`)
+		fmt.Fprint(resp, `<h1>Попробуйте снова.</h1>`)
 	}
 }
 
 // --- Основная функция ---
 
 func main() {
-	// 1. Инициализация логгера
 	logger.Init()
 	defer logger.Close()
 
-	// 2. Инициализация Audit Logger
 	if err := logger.InitAuditLogger("blocked_requests.log"); err != nil {
 		slog.Error("Ошибка инициализации Audit Logger", "error", err)
 		os.Exit(1)
 	}
 	defer logger.CloseAuditLogger()
 
-	// 3. Загрузка конфигурации
 	cfg := config.New()
 
-	// 4. Инициализация Redis (используем метод разработчика №2)
 	rds := cache.NewRedis(cfg)
 	defer rds.CloseRedis()
 
-	// 5. Настройка прокси на бэкенд
-	backServer, err := url.Parse(cfg.BackendURL)
-	if err != nil {
-		logger.Log.Fatal("Ошибка подключения к бэкенду", "err", err)
-	}
-	proxy = httputil.NewSingleHostReverseProxy(backServer)
+	router := app.NewRouter([]string{cfg.BackendURL}, cfg, rds)
 
-	// 6. Создание Mux и настройка роутов
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/", homeHandler)
-	mux.HandleFunc("/health", healthHandler)
-	mux.HandleFunc("/form", formHandler)
+	// Сначала регистрируем свои роуты
 	mux.HandleFunc("/challenge", generateChallenge)
 	mux.HandleFunc("/challenge/verify", verifyChallenge)
 
-	// 7. Сборка цепочки Middleware (Порядок важен!)
-	handler := http.Handler(mux)
+	// Затем добавляем все остальные роуты из router.go
+	// Мы используем ServeHTTP, чтобы перенаправить все остальные запросы на наш основной роутер
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Если это /challenge или /challenge/verify — обрабатываем здесь
+		if r.URL.Path == "/challenge" || r.URL.Path == "/challenge/verify" {
+			mux.ServeHTTP(w, r)
+			return
+		}
+		// Иначе передаем дальше в основной роутер
+		router.ServeHTTP(w, r)
+	})
 
-	// Шаг A: Проверка на ботов
-	handler = middleware.BotDetectionMiddleware(handler)
-
-	// Шаг B: Добавление безопасных заголовков
-	handler = middleware.SecureHeadersMiddleware(handler)
-
-	// Шаг C: JWT Аутентификация (используем секрет из конфига)
-	secretKey := []byte(cfg.JWTS)
-	handler = middleware.JWTAuthMiddleware(secretKey, rds)(handler)
-
-	// Шаг D: Логирование запросов
-	handler = middleware.LoggerMiddleware(handler)
-
-	// 8. Запуск сервера
 	server := &http.Server{
 		Addr:         cfg.Port,
 		Handler:      handler,
@@ -164,9 +144,9 @@ func main() {
 		WriteTimeout: 10 * time.Second,
 	}
 
-	logger.Log.Info("🚀 Сервер запущен", "port", cfg.Port)
+	logger.Log.Info("Сервер запущен", "port", cfg.Port)
 
 	if err := server.ListenAndServe(); err != nil {
-		logger.Log.Fatal("💥 Ошибка при запуске сервера", "fatal_err", err)
+		logger.Log.Fatal("Ошибка при запуске сервера", "fatal_err", err)
 	}
 }
