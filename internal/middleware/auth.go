@@ -83,17 +83,17 @@ func JWTAuthMiddleware(secretKey []byte, rds *cache.Redis) func(http.Handler) ht
 				//Защита от повторного использования (basic replay protection)
 				if jti, ok := claims["jti"].(string); ok {
 
-					// isUsed, err := rds.GetJwtEngine().Exists(context.Background(), "used_tokens:"+jti).Result()
+					isUsed, err := rds.GetJwtEngine().Exists(context.Background(), "used_tokens:"+jti).Result()
 
-					// if err != nil {
-					// 	http.Error(w, "Internal error", http.StatusInternalServerError)
-					// 	return
-					// }
+					if err != nil {
+						http.Error(w, "Internal error", http.StatusInternalServerError)
+						return
+					}
 
-					// if isUsed == 1 {
-					// 	http.Error(w, "Token already used", http.StatusUnauthorized)
-					// 	return
-					// }
+					if isUsed == 1 {
+						http.Error(w, "Token already used", http.StatusUnauthorized)
+						return
+					}
 
 					// Помечаем токен как использованный
 					expTime := int64(claims["exp"].(float64)) // Приводим exp к int64

@@ -37,7 +37,6 @@ func NewRedis(cfg *config.Config) *Redis {
 		DB:       cfg.Redis.BlacklistDB,
 	})
 
-	// Проверяем подключение
 	if err := jwtClient.Ping(ctx).Err(); err != nil {
 		logger.Log.Error("Ошибка jWT Redis: ", "error", err)
 		return nil

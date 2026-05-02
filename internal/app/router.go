@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -14,51 +15,11 @@ import (
 	"secure-api-gateway/internal/proxy"
 )
 
-var challengeAnswer string
-
-func generateChallenge(resp http.ResponseWriter, req *http.Request) {
-	num1 := rand.Intn(10) + 1
-	num2 := rand.Intn(10) + 1
-	challengeAnswer = strconv.Itoa(num1 + num2)
-
-	resp.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprintf(resp, `
-		<!DOCTYPE html>
-		<html>
-		<head><title>Security Challenge</title></head>
-		<body>
-			<h2>Безопасность: Решите задачу</h2>
-			<p>Сколько будет: <strong>%d + %d</strong>?</p>
-			<form method="POST">
-				<input type="number" name="answer" required placeholder="Ответ">
-				<button type="submit">Проверить</button>
-			</form>
-		</body>
-		</html>
-	`, num1, num2)
-}
-
-func verifyChallenge(resp http.ResponseWriter, req *http.Request) {
-	if req.Method != http.MethodPost {
-		http.Redirect(resp, req, "/challenge", http.StatusSeeOther)
-		return
-	}
-	req.ParseForm()
-	userAnswer := req.FormValue("answer")
-
-	if userAnswer == challengeAnswer {
-		resp.WriteHeader(http.StatusOK)
-		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(resp, `<h1>✅ Верно! Вы прошли проверку безопасности.</h1>`)
-	} else {
-		resp.WriteHeader(http.StatusForbidden)
-		resp.Header().Set("Content-Type", "text/html; charset=utf-8")
-		fmt.Fprint(resp, `<h1>❌ Неверно. Попробуйте снова.</h1>`)
-	}
-}
-
 func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.Handler {
 	mux := http.NewServeMux()
+	ctx := context.Background()
+
+	rlClient := rds.GetRlEngine()
 
 	logMW := middleware.LoggerMiddleware
 	blMW := middleware.IPBlacklistMiddleware(rds)
@@ -79,20 +40,11 @@ func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.H
 	})
 
 	healthHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		alive := gwProxy.IsAnyAlive()
-		log := logger.FromContext(r.Context())
-		log.Debug("Health check performed", "is_alive", alive)
-
-		w.Header().Set("Content-Type", "text/plain")
-
-		if !alive {
-			w.WriteHeader(http.StatusServiceUnavailable)
-			w.Write([]byte("ERROR: Backend is down"))
-			return
+		if gwProxy.IsAnyAlive() {
+			w.Write([]byte("OK"))
+		} else {
+			w.WriteHeader(503)
 		}
-
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
 	})
 
 	formHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -101,14 +53,62 @@ func NewRouter(targetURLs []string, cfg *config.Config, rds *cache.Redis) http.H
 		gwProxy.ServeHTTP(w, r)
 	})
 
-	favicoHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	challengeHandler := func(w http.ResponseWriter, r *http.Request) {
+		num1, num2 := rand.Intn(10)+1, rand.Intn(10)+1
+		answer := num1 + num2
+		key := "challenge:" + r.RemoteAddr
+
+		err := rlClient.Set(ctx, key, strconv.Itoa(answer), 5*time.Minute).Err()
+		if err != nil {
+			logger.Log.Error("Redis challenge error", "err", err)
+			http.Error(w, "Service temp unavailable", 500)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, "<h2>Решите задачу: %d + %d</h2><form method='POST' action='/challenge/verify'><input name='answer' type='number'><button>Проверить</button></form>", num1, num2)
+	}
+
+	verifyChallenge := func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, "Bad request", 400)
+			return
+		}
+
+		userIP := r.RemoteAddr
+
+		challengeKey := "challenge:" + userIP
+		correctAnswer, err := rds.GetRlEngine().Get(ctx, challengeKey).Result()
+
+		if err != nil || correctAnswer == "" {
+			http.Error(w, "Challenge expired", http.StatusForbidden)
+			return
+		}
+
+		if r.FormValue("answer") == correctAnswer {
+			rds.GetRlEngine().Del(ctx, challengeKey)
+
+			err := rds.GetIPEngine().Del(ctx, userIP).Err()
+			if err != nil {
+				logger.Log.Error("Failed to unblock IP", "ip", userIP, "err", err)
+			} else {
+				logger.Log.Info("IP unblocked via challenge", "ip", userIP)
+			}
+
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			fmt.Fprint(w, "<h1>✅ Верно! Вы разблокированы.</h1><p><a href='/'>Перейти на главную</a></p>")
+		} else {
+			w.WriteHeader(http.StatusForbidden)
+			fmt.Fprint(w, "<h1>❌ Неверно. Попробуйте еще раз.</h1>")
+		}
+	}
 
 	mux.Handle("/", logMW(blMW(jwtMW(rlMW(homeHandler)))))
 	mux.Handle("/app", logMW(blMW(homeHandler)))
 	mux.Handle("/health", logMW(blMW(healthHandler)))
 	mux.Handle("/form", logMW(blMW(bsMW(formHandler))))
-	mux.Handle("/favicon.ico", favicoHandler)
-	mux.HandleFunc("/challenge", generateChallenge)
+	mux.Handle("/favicon.ico", http.NotFoundHandler())
+	mux.HandleFunc("/challenge", challengeHandler)
 	mux.HandleFunc("/challenge/verify", verifyChallenge)
 
 	return mux

@@ -1,8 +1,10 @@
 package logger
 
 import (
+	"bufio"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/sirupsen/logrus"
 )
@@ -11,23 +13,28 @@ type logrusWrapper struct {
 	entry logrus.FieldLogger
 }
 
-var Log Logger
-var logFile *os.File
+var (
+	Log            Logger
+	logFile        *os.File
+	bufferedWriter *bufio.Writer
+)
 
-func Init() {
+func Init(fileName string) {
 	tempLog := logrus.New()
 
 	tempLog.SetFormatter(&logrus.JSONFormatter{})
 	tempLog.SetLevel(logrus.DebugLevel)
 
-	file, err := os.OpenFile("api_gateway.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	file, err := os.OpenFile(fileName, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 
 	if err != nil {
 		fmt.Printf("Log file error: %v", err)
 		tempLog.SetOutput(os.Stdout)
 	} else {
 		logFile = file
-		tempLog.SetOutput(file)
+		bufferedWriter = bufio.NewWriter(file)
+
+		tempLog.SetOutput(bufferedWriter)
 
 		tempLog.AddHook(&ConsoleHook{
 			formatter: &logrus.TextFormatter{
@@ -35,6 +42,15 @@ func Init() {
 				ForceColors:   true,
 			},
 		})
+
+		go func() {
+			for {
+				time.Sleep(time.Second * 1)
+				if bufferedWriter != nil {
+					bufferedWriter.Flush()
+				}
+			}
+		}()
 	}
 
 	Log = &logrusWrapper{entry: tempLog}
@@ -70,6 +86,9 @@ func (w *logrusWrapper) Warn(msg string, args ...any)  { w.write(logrus.WarnLeve
 func (w *logrusWrapper) Fatal(msg string, args ...any) { w.write(logrus.FatalLevel, msg, args...) }
 
 func Close() {
+	if bufferedWriter != nil {
+		bufferedWriter.Flush()
+	}
 	if logFile != nil {
 		logFile.Close()
 	}
