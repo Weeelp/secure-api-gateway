@@ -1,0 +1,220 @@
+# openapi.yaml
+openapi: 3.0.3
+info:
+  title: Secure API Gateway
+  description: >
+    ## Ключевые возможности
+    
+    *   **Smart Load Balancing:** Балансировщик Round Robin равномерно распределяет запросы между указанными бэкендами.
+    *   **Decentralized Health Checks:** Каждый бэкенд имеет свою фоновую горутину-чекер. При падении сервера шлюз мгновенно перестает слать туда трафик.
+    *   **JWT Security & Replay Protection:** Валидация токенов по секретному ключу и Issuer. Каждый токен (JTI) регистрируется в Redis для защиты от повторного использования.
+    *   **Multi-Level Rate Limiting:** Лимиты запросов для пользователей, хранящиеся в отдельном блоке Redis.
+    *   **Dynamic IP Blacklist:** Блокировка нежелательных IP-адресов через выделенную базу Redis.
+    *   **Payload Security:** Контроль размера тела запроса для предотвращения перегрузки серверов.
+    *   **Logging:** логирование с RequestID для сквозного отслеживания запросов.
+  
+  version: 1.0.0
+  contact:
+    name: veisdi
+    email: your.email@example.com
+
+servers:
+  - url: http://localhost:8080
+    description: Локальный сервер разработки
+
+tags:
+  - name: Health
+    description: Проверка состояния системы
+  - name: Public
+    description: Публичные endpoints (не требуют аутентификации)
+  - name: Authenticated
+    description: Endpoints, требующие JWT токен
+  - name: Challenge
+    description: Endpoint для проверки JS Challenge
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      summary: Проверка здоровья сервера
+      description: Возвращает статус работы сервера и всех зависимостей (Redis, бэкенды).
+      responses:
+        '200':
+          description: OK - Сервер работает
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "OK"
+        '503':
+          description: Service Unavailable - Ошибка подключения к Redis или бэкендам
+
+  /:
+    get:
+      tags: [Authenticated]
+      summary: Главная страница
+      description: Проксирует запрос на бэкенд. Требует валидный JWT токен.
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: Authorization
+          in: header
+          required: true
+          schema:
+            type: string
+            example: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+      responses:
+        '200':
+          description: Успешный ответ от бэкенда
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /form:
+    get:
+      tags: [Authenticated]
+      summary: Форма отправки данных
+      description: Возвращает HTML форму для отправки данных на бэкенд. Требует валидный JWT токен.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: HTML форма
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    post:
+      tags: [Authenticated]
+      summary: Отправка формы
+      description: Принимает POST запрос с формой и пересылает данные на бэкенд. Требует валидный JWT токен.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  example: "Иван Иванов"
+              required:
+                - name
+      responses:
+        '200':
+          description: Успешная обработка формы
+          content:
+            text/html:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /challenge:
+    get:
+      tags: [Challenge]
+      summary: Генерация задачи безопасности
+      description: Возвращает простую математическую задачу для проверки, что пользователь — человек (JS Challenge). Не требует аутентификации.
+      responses:
+        '200':
+          description: HTML страница с задачей
+          content:
+            text/html:
+              schema:
+                type: string
+                example: |
+                  <html>
+                  <body>
+                    <h2>Безопасность: Решите задачу</h2>
+                    <p>Сколько будет: <strong>5 + 3</strong>?</p>
+                    <form method="POST">
+                      <input type="number" name="answer" required placeholder="Ответ">
+                      <button type="submit">Проверить</button>
+                    </form>
+                  </body>
+                  </html>
+
+  /challenge/verify:
+    post:
+      tags: [Challenge]
+      summary: Проверка ответа на задачу
+      description: Проверяет ответ пользователя на математическую задачу. Если верно — доступ открывается.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              properties:
+                answer:
+                  type: string
+                  example: "8"
+              required:
+                - answer
+      responses:
+        '200':
+          description: Верно! Вы прошли проверку безопасности.
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<h1>Верно! Вы прошли проверку безопасности.</h1>"
+        '403':
+          description: Неверно. Попробуйте снова.
+          content:
+            text/html:
+              schema:
+                type: string
+                example: "<h1>Неверно. Попробуйте снова.</h1>"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: JWT токен для аутентификации. Получается через `test_token_rl.go`.
+
+  responses:
+    Unauthorized:
+      description: Недопустимый токен, истек срок действия или токен уже использован.
+      headers:
+        X-Rate-Limit:
+          description: Ограничение скорости запросов (если превышено)
+          schema:
+            type: string
+            example: "exceeded"
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Invalid token"
+    
+    Forbidden:
+      description: Доступ запрещен (бот, заблокированный IP, неверный ответ challenge).
+      content:
+        text/plain:
+          schema:
+            type: string
+            example: "Bot detected"
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+          example: "Internal server error"
+        request_id:
+          type: string
+          example: "a1b2c3d4-e5f6-7890-g1h2-i3j4k5l6m7n8"
