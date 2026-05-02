@@ -9,10 +9,12 @@ type AuditLogger struct {
 	file *os.File
 }
 
+// Глобальная переменная (пустая по умолчанию)
 var auditLog *AuditLogger
 
 func InitAuditLogger(filename string) error {
 	var err error
+	auditLog = &AuditLogger{}
 	auditLog.file, err = os.OpenFile(filename, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return err
